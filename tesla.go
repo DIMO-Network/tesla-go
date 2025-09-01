@@ -79,7 +79,7 @@ type fleetStatus struct {
 // GetFleetStatus retrieves fleet status information for the car with
 // the given VIN, using the [fleet_status] endpoint.
 //
-// [fleet_status](https://developer.tesla.com/docs/fleet-api/endpoints/vehicle-endpoints#fleet-status)
+// [fleet_status]: https://developer.tesla.com/docs/fleet-api/endpoints/vehicle-endpoints#fleet-status
 func (c *Client) GetFleetStatus(ctx context.Context, token, vin string) (*FleetStatus, error) {
 	reqBody := getFleetStatusRequest{
 		VINs: []string{vin}, // Recommended to only ever do one.

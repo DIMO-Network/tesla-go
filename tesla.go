@@ -53,25 +53,35 @@ func New(options ...Option) *Client {
 	return c
 }
 
-type GetFleetStatusRequest struct {
+type getFleetStatusRequest struct {
 	VINs []string `json:"vins"`
 }
 
-type FleetStatus struct {
-	VehicleCommandProtocolRequired     bool   `json:"vehicle_command_protocol_required"`
-	SafetyScreenStreamingToggleEnabled *bool  `json:"safety_screen_streaming_toggle_enabled"`
-	FirmwareVersion                    string `json:"firmware_version"`
-	FleetTelemetryVersion              string `json:"fleet_telemetry_version"`
-	TotalNumberOfKeys                  int    `json:"total_number_of_keys"`
-	DiscountedDeviceData               bool   `json:"discounted_device_data"`
+type responseWrapper[A any] struct {
+	Response A `json:"response"`
+}
+
+type vehicleInfo struct {
+	VehicleCommandProtocolRequired     bool    `json:"vehicle_command_protocol_required"`
+	SafetyScreenStreamingToggleEnabled *bool   `json:"safety_screen_streaming_toggle_enabled"`
+	FirmwareVersion                    string  `json:"firmware_version"`
+	FleetTelemetryVersion              *string `json:"fleet_telemetry_version"`
+	TotalNumberOfKeys                  *int    `json:"total_number_of_keys"`
+	DiscountedDeviceData               bool    `json:"discounted_device_data"`
+}
+
+type fleetStatus struct {
+	KeyPairedVINs []string               `json:"key_paired_vins"`
+	UnpairedVINs  []string               `json:"unpaired_vins"`
+	VehicleInfo   map[string]vehicleInfo `json:"vehicle_info"`
 }
 
 // GetFleetStatus retrieves fleet status information for the car with
 // the given VIN, using the [fleet_status] endpoint.
 //
 // [fleet_status](https://developer.tesla.com/docs/fleet-api/endpoints/vehicle-endpoints#fleet-status)
-func (c *Client) GetFleetStatus(ctx context.Context, token, vin string) ([]byte, error) {
-	reqBody := GetFleetStatusRequest{
+func (c *Client) GetFleetStatus(ctx context.Context, token, vin string) (*FleetStatus, error) {
+	reqBody := getFleetStatusRequest{
 		VINs: []string{vin}, // Recommended to only ever do one.
 	}
 	reqBytes, err := json.Marshal(reqBody)
@@ -100,8 +110,34 @@ func (c *Client) GetFleetStatus(ctx context.Context, token, vin string) ([]byte,
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return respBytes, fmt.Errorf("status code %d", resp.StatusCode)
+		return nil, fmt.Errorf("status code %d", resp.StatusCode)
 	}
 
-	return respBytes, nil
+	var respBody responseWrapper[fleetStatus]
+	err = json.Unmarshal(respBytes, &respBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse response body: %w", err)
+	}
+
+	fs := respBody.Response.VehicleInfo[vin]
+
+	return &FleetStatus{
+		KeyPaired:                          len(respBody.Response.KeyPairedVINs) == 1, // Maybe validate more here.
+		VehicleCommandProtocolRequired:     fs.VehicleCommandProtocolRequired,
+		SafetyScreenStreamingToggleEnabled: fs.SafetyScreenStreamingToggleEnabled,
+		FirmwareVersion:                    fs.FirmwareVersion,
+		FleetTelemetryVersion:              fs.FleetTelemetryVersion,
+		TotalNumberOfKeys:                  fs.TotalNumberOfKeys,
+		DiscountedDeviceData:               fs.DiscountedDeviceData,
+	}, nil
+}
+
+type FleetStatus struct {
+	KeyPaired                          bool
+	VehicleCommandProtocolRequired     bool
+	SafetyScreenStreamingToggleEnabled *bool
+	FirmwareVersion                    string
+	FleetTelemetryVersion              *string
+	TotalNumberOfKeys                  *int
+	DiscountedDeviceData               bool
 }
